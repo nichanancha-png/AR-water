@@ -1,524 +1,153 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="th">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>AR วัฏจักรน้ำ</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ต้นคริสต์มาส AR</title>
+<script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/dist/mindar-image.prod.js"></script>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+<script>
+AFRAME.registerComponent('xmas-tree', {
+  init() {
+    this.lights = []; this.flakes = []; this.lightsOn = true; this.snowOn = true; this.grow = 0; this.found = false;
+    const add = (parent, tag, attrs) => {
+      const e = document.createElement(tag);
+      for (const k in attrs) e.setAttribute(k, attrs[k]);
+      parent.appendChild(e); return e;
+    };
+    const mat = (color, glow) => `color: ${color}; roughness: 0.7` + (glow ? `; emissive: ${color}; emissiveIntensity: ${glow}` : '');
+    const ball = (p, r, color, x, y, z, glow) => add(p, 'a-sphere', {
+      radius: r, position: `${x} ${y} ${z}`, material: mat(color, glow), 'segments-width': 8, 'segments-height': 6 });
 
-  <!-- 1. นำเข้าไลบรารีตามลำดับที่กำหนดอย่างเคร่งครัด -->
-  <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/dist/mindar-image.prod.js"></script>
-  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+    // กลุ่มนี้ใช้แกน y เป็นความสูง (ตัวแม่ถูกหมุน 90 องศาให้ตั้งขึ้นจากการ์ด)
+    const tree = this.tree = add(this.el, 'a-entity', {});
+    add(tree, 'a-cylinder', { radius: 0.06, height: 0.18, position: '0 0.09 0', material: mat('#6b3e1d') });
 
-  <style>
-    * { box-sizing: border-box; }
-    body, html {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      user-select: none;
-      -webkit-user-select: none;
+    // ใบ 4 ชั้น: [ความสูงฐาน, รัศมีฐาน, ความสูงกรวย]
+    const tiers = [[0.15, 0.34, 0.30], [0.31, 0.28, 0.28], [0.47, 0.22, 0.26], [0.63, 0.16, 0.25]];
+    const baubles = ['#d90429', '#ffb703', '#1d6fd1', '#c77dff', '#f1f1f1'];
+    const bulbs = ['#ff2d2d', '#ffe600', '#29d3ff', '#ff5ec4'];
+    tiers.forEach(([y, r, h], t) => {
+      add(tree, 'a-cone', { 'radius-bottom': r, 'radius-top': 0.005, height: h,
+        position: `0 ${y + h / 2} 0`, material: mat(t % 2 ? '#13823b' : '#0b6b2e') });
+      const surface = (up, a, out) => {
+        const q = r * (1 - up) + out;
+        return [Math.cos(a) * q, y + h * up, Math.sin(a) * q];
+      };
+      const n = 7 - t;
+      for (let i = 0; i < n; i++) {
+        const a = i * Math.PI * 2 / n + t * 0.7;
+        ball(tree, 0.028, baubles[(i + t) % baubles.length], ...surface(0.14, a, 0.012));
+      }
+      const m = 9 - t;
+      for (let i = 0; i < m; i++) {
+        const a = i * Math.PI * 2 / m + t * 0.4 + 0.3;
+        const color = bulbs[(i + t) % bulbs.length];
+        this.lights.push({ el: ball(tree, 0.013, color, ...surface(0.38, a, 0.01), 1), color, group: i % 2 });
+      }
+    });
+
+    // สายรุ้งสีทองพันเป็นเกลียว
+    for (let i = 0; i < 110; i++) {
+      const k = i / 109, y = 0.21 + k * 0.6, a = k * Math.PI * 9;
+      // รัศมีผิวนอกของใบที่ความสูง y
+      let q = 0;
+      tiers.forEach(([b, r, h]) => { if (y >= b && y <= b + h) q = Math.max(q, r * (1 - (y - b) / h)); });
+      ball(tree, 0.01, '#ffd700', Math.cos(a) * (q + 0.008), y, Math.sin(a) * (q + 0.008), 0.35);
     }
 
-    /* กล่องข้อความส่องกล้อง */
-    #scanPrompt {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(15, 23, 42, 0.88);
-      color: #38bdf8;
-      border: 2px dashed #38bdf8;
-      border-radius: 16px;
-      padding: 24px 32px;
-      font-size: 20px;
-      font-weight: bold;
-      text-align: center;
-      z-index: 100;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-      pointer-events: none;
-      transition: opacity 0.3s ease;
+    // ดาวบนยอด
+    const shape = new THREE.Shape();
+    for (let i = 0; i < 10; i++) {
+      const a = i * Math.PI / 5 + Math.PI / 2, q = i % 2 ? 0.042 : 0.1;
+      shape[i ? 'lineTo' : 'moveTo'](Math.cos(a) * q, Math.sin(a) * q);
     }
+    const star = new THREE.Mesh(
+      new THREE.ExtrudeGeometry(shape, { depth: 0.03, bevelEnabled: false }),
+      new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffaa00, emissiveIntensity: 0.8 }));
+    star.position.set(0, 0.95, -0.015);
+    tree.object3D.add(star);
 
-    /* กล่องข้อมูลบทเรียน (HTML ซ้อนบนจอ) */
-    #uiContainer {
-      position: absolute;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 92%;
-      max-width: 440px;
-      z-index: 100;
-      display: none; /* ควบคุมการแสดงผลตามการตรวจจับภาพ */
-      flex-direction: column;
-      gap: 12px;
-    }
+    // กล่องของขวัญ
+    [[0.25, 0.2, 0.12, '#d90429', '#ffd700'], [-0.27, 0.14, 0.1, '#1d6fd1', '#ffffff'],
+     [-0.1, -0.29, 0.13, '#7b2cbf', '#ffb703'], [0.24, -0.2, 0.09, '#ffb703', '#d90429']]
+    .forEach(([x, z, s, c, ribbon]) => {
+      const g = add(tree, 'a-entity', { position: `${x} ${s / 2} ${z}` });
+      add(g, 'a-box', { width: s, height: s, depth: s, material: mat(c) });
+      add(g, 'a-box', { width: s * 0.2, height: s * 1.04, depth: s * 1.04, material: mat(ribbon) });
+      add(g, 'a-box', { width: s * 1.04, height: s * 1.04, depth: s * 0.2, material: mat(ribbon) });
+      ball(g, s * 0.15, ribbon, 0, s * 0.58, 0);
+    });
 
-    .info-card {
-      background: rgba(15, 23, 42, 0.92);
-      border: 1px solid rgba(56, 189, 248, 0.35);
-      border-radius: 18px;
-      padding: 16px 20px;
-      color: #ffffff;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-      backdrop-filter: blur(8px);
+    // หิมะ (ไม่หมุนตามต้นไม้)
+    this.snow = add(this.el, 'a-entity', {});
+    for (let i = 0; i < 70; i++) {
+      const x = Math.random() - 0.5, z = Math.random() - 0.5, y = Math.random() * 1.2;
+      this.flakes.push({ el: ball(this.snow, 0.008, '#ffffff', x, y, z, 0.6),
+        x, z, y, speed: 0.08 + Math.random() * 0.12 });
     }
-
-    .stage-badge {
-      display: inline-block;
-      background: #0284c7;
-      color: white;
-      font-size: 13px;
-      font-weight: 700;
-      padding: 3px 10px;
-      border-radius: 12px;
-      margin-bottom: 6px;
-      letter-spacing: 0.5px;
-    }
-
-    .stage-title {
-      font-size: 19px;
-      font-weight: 800;
-      color: #38bdf8;
-      margin-bottom: 4px;
-    }
-
-    .stage-desc {
-      font-size: 14px;
-      line-height: 1.45;
-      color: #e2e8f0;
-      margin: 0;
-      max-height: 44px;
-      overflow: hidden;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-    }
-
-    /* ปุ่มควบคุม */
-    .button-group {
-      display: flex;
-      gap: 10px;
-    }
-
-    .nav-btn {
-      flex: 1;
-      height: 52px;
-      border: none;
-      border-radius: 14px;
-      font-size: 16px;
-      font-weight: 700;
-      color: white;
-      background: #0284c7;
-      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      touch-action: manipulation;
-    }
-    .nav-btn:active { background: #0369a1; transform: scale(0.97); }
-    .nav-btn:disabled {
-      background: #475569;
-      box-shadow: none;
-      opacity: 0.5;
-    }
-
-    .quiz-btn {
-      background: #16a34a;
-      box-shadow: 0 4px 14px rgba(22, 163, 74, 0.4);
-    }
-    .quiz-btn:active { background: #15803d; }
-
-    /* โมดอลแบบทดสอบ */
-    #quizModal {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(15, 23, 42, 0.95);
-      z-index: 200;
-      display: none;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-    }
-
-    .quiz-card {
-      background: #1e293b;
-      border: 1px solid #38bdf8;
-      border-radius: 18px;
-      width: 100%;
-      max-width: 400px;
-      padding: 24px;
-      color: white;
-    }
-
-    .quiz-question {
-      font-size: 17px;
-      font-weight: 700;
-      margin-bottom: 16px;
-      line-height: 1.4;
-    }
-
-    .quiz-options {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .option-btn {
-      background: #334155;
-      color: white;
-      border: 1px solid #475569;
-      border-radius: 12px;
-      padding: 12px 16px;
-      font-size: 15px;
-      text-align: left;
-      cursor: pointer;
-    }
-    .option-btn:active { background: #475569; }
-
-    #quizFeedback {
-      margin-top: 14px;
-      font-size: 14px;
-      font-weight: 700;
-      text-align: center;
-      min-height: 20px;
-    }
-
-    .close-quiz-btn {
-      margin-top: 16px;
-      width: 100%;
-      padding: 12px;
-      border: none;
-      border-radius: 12px;
-      background: #64748b;
-      color: white;
-      font-weight: bold;
-    }
-  </style>
+    this.el.object3D.scale.setScalar(0.001);
+  },
+  restart() { this.grow = 0; this.found = true; },
+  tick(time, delta) {
+    if (!this.found) return;
+    const dt = Math.min(delta, 50) / 1000;
+    this.grow = Math.min(1, this.grow + dt / 1.5);
+    this.el.object3D.scale.setScalar(Math.max(0.001, 1 - Math.pow(1 - this.grow, 3)));
+    this.tree.object3D.rotation.y += dt * 0.35;
+    const phase = Math.floor(time / 450) % 2;
+    this.lights.forEach(l => {
+      const mesh = l.el.getObject3D('mesh');
+      if (mesh) mesh.material.emissiveIntensity = this.lightsOn ? (l.group === phase ? 1.4 : 0.25) : 0;
+      if (mesh) mesh.material.color.set(this.lightsOn ? l.color : "#555555");
+    });
+    if (this.snowOn) this.flakes.forEach(f => {
+      f.y -= f.speed * dt; if (f.y < 0) f.y = 1.2;
+      f.el.object3D.position.set(f.x + Math.sin(time / 700 + f.z * 20) * 0.02, f.y, f.z);
+    });
+  }
+});
+</script>
+<style>
+  body{margin:0;overflow:hidden;font-family:sans-serif}
+  #hint{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:10;background:#000b;color:#fff;
+    padding:12px 18px;border-radius:24px;width:max-content;max-width:85vw;text-align:center}
+  #bar{position:fixed;bottom:24px;left:0;right:0;z-index:10;display:flex;gap:12px;justify-content:center}
+  #bar button{font-size:17px;padding:14px 20px;border:0;border-radius:28px;background:#b00020;color:#fff}
+</style>
 </head>
 <body>
+<div id="hint">ส่องกล้องไปที่การ์ดทั้งใบ</div>
+<div id="bar"><button id="bLight">ปิดไฟ</button><button id="bSnow">ปิดหิมะ</button></div>
 
-  <!-- ข้อความแนะนำให้ส่องกล้อง -->
-  <div id="scanPrompt">📷 ส่องกล้องไปที่ภาพโปสเตอร์</div>
+<a-scene mindar-image="imageTargetSrc: ./targets.mind; uiScanning: no; filterMinCF: 0.001; filterBeta: 0.01"
+  vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+  <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+  <a-light type="ambient" intensity="1.4"></a-light>
+  <a-light type="directional" intensity="1.6" position="0.5 1 1"></a-light>
+  <a-entity id="target" mindar-image-target="targetIndex: 0">
+    <a-entity rotation="90 0 0"><a-entity id="xmas" xmas-tree></a-entity></a-entity>
+  </a-entity>
+</a-scene>
 
-  <!-- ส่วนแสดงคำอธิบายและปุ่มกด -->
-  <div id="uiContainer">
-    <div class="info-card">
-      <span class="stage-badge" id="stepBadge">ขั้นที่ 1/4</span>
-      <div class="stage-title" id="stepTitle">การระเหย (Evaporation)</div>
-      <p class="stage-desc" id="stepDesc">น้ำจากทะเลและแหล่งน้ำได้รับความร้อนจากดวงอาทิตย์ ระเหยกลายเป็นไอน้ำลอยขึ้นสู่อากาศ</p>
-    </div>
-    <div class="button-group">
-      <button class="nav-btn" id="prevBtn" disabled>◀ ย้อนกลับ</button>
-      <button class="nav-btn" id="nextBtn">ถัดไป ▶</button>
-      <button class="nav-btn quiz-btn" id="openQuizBtn" style="display: none;">ทำแบบทดสอบ 📝</button>
-    </div>
-  </div>
-
-  <!-- กล่องคำถามทบทวนความรู้ 3 ข้อ -->
-  <div id="quizModal">
-    <div class="quiz-card">
-      <div style="font-size: 13px; color: #38bdf8; font-weight: bold; margin-bottom: 6px;" id="quizIndex">คำถามที่ 1 จาก 3</div>
-      <div class="quiz-question" id="quizQuestion">ข้อใดคือพลังงานหลักที่ทำให้เกิดการระเหยของน้ำ?</div>
-      <div class="quiz-options" id="quizOptions"></div>
-      <div id="quizFeedback"></div>
-      <button class="close-quiz-btn" id="quizNextBtn" style="display: none;">ข้อถัดไป ➔</button>
-      <button class="close-quiz-btn" id="closeQuizBtn" style="margin-top: 8px;">กลับไปที่โมเดล AR</button>
-    </div>
-  </div>
-
-  <!-- ฉาก A-Frame และระบบแทร็ก MindAR -->
-  <a-scene 
-    mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiScanning: no; filterMinCF: 0.0001; filterBeta: 0.001;" 
-    embedded 
-    color-space="sRGB" 
-    renderer="colorManagement: true, physicallyCorrectLights" 
-    vr-mode-ui="enabled: false" 
-    device-orientation-permission-ui="enabled: false">
-    
-    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-
-    <!-- เมื่อวางกระดาษบนโต๊ะ ระนาบกระดาษคือ XY และแกน +Z พุ่งขึ้นจากกระดาษ -->
-    <a-entity mindar-image-target="targetIndex: 0" id="targetAnchor">
-
-      <!-- ================= โมเดลภูมิประเทศพื้นฐาน (Base Landscape) ================= -->
-      <a-entity id="baseLandscape">
-        <!-- มหาสมุทร (ด้านขวาล่าง) -->
-        <a-box position="0.25 -0.25 0.02" width="0.45" height="0.45" depth="0.04" color="#0284c7"></a-box>
-        <!-- แผ่นดิน (ด้านซ้ายล่าง) -->
-        <a-box position="-0.25 -0.25 0.02" width="0.45" height="0.45" depth="0.04" color="#22c55e"></a-box>
-        
-        <!-- ภูเขาหลัก (รูปทรงกรวย สูงพุ่งขึ้นตามแกน Z) -->
-        <a-cone position="-0.25 0.15 0.15" rotation="90 0 0" radius-bottom="0.22" radius-top="0.02" height="0.30" color="#64748b"></a-cone>
-        <a-cone position="-0.25 0.15 0.27" rotation="90 0 0" radius-bottom="0.08" radius-top="0.01" height="0.10" color="#f8fafc"></a-cone>
-        
-        <!-- แม่น้ำ (เชื่อมระหว่างภูเขาลงสู่ทะเล) -->
-        <a-cylinder position="0.0 -0.05 0.03" rotation="90 45 0" radius="0.04" height="0.4" color="#38bdf8"></a-cylinder>
-
-        <!-- ดวงอาทิตย์ (มุมขวาบน) -->
-        <a-sphere position="0.35 0.35 0.18" radius="0.08" color="#f59e0b">
-          <a-sphere radius="0.09" color="#fef08a" opacity="0.3"></a-sphere>
-        </a-sphere>
-      </a-entity>
-
-      <!-- ================= ขั้นที่ 1: การระเหย (Evaporation) ================= -->
-      <a-entity id="stage1-evap" visible="true">
-        <!-- อนุภาคไอน้ำลอยขึ้นจากทะเลสู่ท้องฟ้า (แกน Y และลอยสูงขึ้นในแกน Z) -->
-        <a-sphere position="0.18 -0.20 0.05" radius="0.022" color="#bae6fd"
-          animation="property: position; to: 0.18 -0.05 0.18; dur: 1500; easing: easeInOutQuad; loop: true; dir: alternate;">
-        </a-sphere>
-        <a-sphere position="0.28 -0.25 0.07" radius="0.028" color="#e0f2fe"
-          animation="property: position; to: 0.24 -0.08 0.20; dur: 1800; delay: 300; easing: easeInOutQuad; loop: true; dir: alternate;">
-        </a-sphere>
-        <a-sphere position="0.34 -0.15 0.06" radius="0.025" color="#7dd3fc"
-          animation="property: position; to: 0.30 0.02 0.22; dur: 1600; delay: 600; easing: easeInOutQuad; loop: true; dir: alternate;">
-        </a-sphere>
-      </a-entity>
-
-      <!-- ================= ขั้นที่ 2: การควบแน่น (Condensation) ================= -->
-      <a-entity id="stage2-cond" visible="false">
-        <!-- เมฆก่อตัวหนาแน่นขึ้นเหนือภูเขาและลอยสะสมตัว -->
-        <a-entity position="-0.10 0.22 0.22"
-          animation="property: scale; from: 0.7 0.7 0.7; to: 1.15 1.15 1.15; dur: 2000; loop: true; dir: alternate; easing: easeInOutSine;">
-          <a-sphere position="0 0 0" radius="0.08" color="#ffffff"></a-sphere>
-          <a-sphere position="0.07 0.02 0.01" radius="0.07" color="#f1f5f9"></a-sphere>
-          <a-sphere position="-0.07 -0.01 0.01" radius="0.06" color="#e2e8f0"></a-sphere>
-          <a-sphere position="0 0.05 0.02" radius="0.06" color="#cbd5e1"></a-sphere>
-        </a-entity>
-      </a-entity>
-
-      <!-- ================= ขั้นที่ 3: ฝนตก (Precipitation) ================= -->
-      <a-entity id="stage3-rain" visible="false">
-        <!-- เมฆฝนสีเทาเข้ม -->
-        <a-entity position="-0.15 0.18 0.24">
-          <a-sphere position="0 0 0" radius="0.09" color="#64748b"></a-sphere>
-          <a-sphere position="0.08 0.02 0.01" radius="0.07" color="#475569"></a-sphere>
-          <a-sphere position="-0.08 -0.01 0.01" radius="0.07" color="#334155"></a-sphere>
-        </a-entity>
-
-        <!-- สายฝนหยดลงสู่ภูเขาและพื้นดิน -->
-        <a-cylinder position="-0.18 0.14 0.18" rotation="90 0 0" radius="0.005" height="0.04" color="#38bdf8"
-          animation="property: position; to: -0.18 0.10 0.05; dur: 700; loop: true; easing: linear;">
-        </a-cylinder>
-        <a-cylinder position="-0.10 0.12 0.20" rotation="90 0 0" radius="0.005" height="0.04" color="#38bdf8"
-          animation="property: position; to: -0.10 0.08 0.05; dur: 650; delay: 150; loop: true; easing: linear;">
-        </a-cylinder>
-        <a-cylinder position="-0.14 0.08 0.19" rotation="90 0 0" radius="0.005" height="0.04" color="#38bdf8"
-          animation="property: position; to: -0.14 0.04 0.05; dur: 750; delay: 300; loop: true; easing: linear;">
-        </a-cylinder>
-      </a-entity>
-
-      <!-- ================= ขั้นที่ 4: น้ำไหลกลับสู่ทะเล (Runoff) ================= -->
-      <a-entity id="stage4-flow" visible="false">
-        <!-- กระแสน้ำระลอกน้ำไหลจากภูเขาตามลำน้ำลงสู่ทะเล -->
-        <a-sphere position="-0.12 0.08 0.05" radius="0.02" color="#67e8f9"
-          animation="property: position; to: 0.18 -0.18 0.04; dur: 2000; loop: true; easing: easeInQuad;">
-        </a-sphere>
-        <a-sphere position="-0.12 0.08 0.05" radius="0.025" color="#06b6d4"
-          animation="property: position; to: 0.18 -0.18 0.04; dur: 2000; delay: 650; loop: true; easing: easeInQuad;">
-        </a-sphere>
-        <a-sphere position="-0.12 0.08 0.05" radius="0.02" color="#bae6fd"
-          animation="property: position; to: 0.18 -0.18 0.04; dur: 2000; delay: 1300; loop: true; easing: easeInQuad;">
-        </a-sphere>
-      </a-entity>
-
-    </a-entity>
-  </a-scene>
-
-  <script>
-    // ข้อมูลขั้นตอนบทเรียน 4 ขั้น
-    const stages = [
-      {
-        badge: "ขั้นที่ 1/4",
-        title: "การระเหย (Evaporation)",
-        desc: "น้ำในทะเลและแหล่งน้ำได้รับความร้อนจากแสงอาทิตย์ จึงเปลี่ยนสถานะกลายเป็นไอน้ำลอยขึ้นสู่ชั้นบรรยากาศ",
-        entityId: "stage1-evap"
-      },
-      {
-        badge: "ขั้นที่ 2/4",
-        title: "การควบแน่น (Condensation)",
-        desc: "ไอน้ำลอยตัวสูงขึ้นกระทบอากาศเย็น รวมตัวกันกลายเป็นละอองน้ำเล็ก ๆ ก่อตัวเป็นก้อนเมฆ",
-        entityId: "stage2-cond"
-      },
-      {
-        badge: "ขั้นที่ 3/4",
-        title: "หยาดน้ำฟ้า / ฝนตก (Precipitation)",
-        desc: "ละอองน้ำในก้อนเมฆรวมตัวกันจนหนาแน่นและมีน้ำหนักมากเกินกว่าจะลอยอยู่ได้ จึงตกลงมาเป็นฝน",
-        entityId: "stage3-rain"
-      },
-      {
-        badge: "ขั้นที่ 4/4",
-        title: "การรวมตัวและไหลกลับ (Collection)",
-        desc: "น้ำฝนที่ตกลงมาซึมลงดินและรวมกันเป็นลำธาร แม่น้ำ ไหลกลับคืนสู่ทะเล เกิดเป็นวัฏจักรหมุนเวียนต่อเนื่อง",
-        entityId: "stage4-flow"
-      }
-    ];
-
-    let currentStep = 0;
-    let isTargetFound = false;
-
-    // องค์ประกอบ DOM UI
-    const scanPrompt = document.getElementById('scanPrompt');
-    const uiContainer = document.getElementById('uiContainer');
-    const stepBadge = document.getElementById('stepBadge');
-    const stepTitle = document.getElementById('stepTitle');
-    const stepDesc = document.getElementById('stepDesc');
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
-    const openQuizBtn = document.getElementById('openQuizBtn');
-
-    // อัปเดตการแสดงผลของขั้นปัจจุบัน
-    function updateStageView() {
-      // ปิด-เปิดโมเดล 3D
-      stages.forEach((st, idx) => {
-        const ent = document.getElementById(st.entityId);
-        if (ent) ent.setAttribute('visible', idx === currentStep);
-      });
-
-      // อัปเดตเนื้อหาข้อความ HTML
-      stepBadge.innerText = stages[currentStep].badge;
-      stepTitle.innerText = stages[currentStep].title;
-      stepDesc.innerText = stages[currentStep].desc;
-
-      // จัดการปุ่มกด
-      prevBtn.disabled = (currentStep === 0);
-      if (currentStep === stages.length - 1) {
-        nextBtn.style.display = 'none';
-        openQuizBtn.style.display = 'flex';
-      } else {
-        nextBtn.style.display = 'flex';
-        openQuizBtn.style.display = 'none';
-      }
-    }
-
-    prevBtn.addEventListener('click', () => {
-      if (currentStep > 0) {
-        currentStep--;
-        updateStageView();
-      }
-    });
-
-    nextBtn.addEventListener('click', () => {
-      if (currentStep < stages.length - 1) {
-        currentStep++;
-        updateStageView();
-      }
-    });
-
-    // ดักจับสถานะพบภาพ / ภาพหลุด
-    const anchor = document.querySelector('#targetAnchor');
-    anchor.addEventListener('targetFound', () => {
-      isTargetFound = true;
-      scanPrompt.style.display = 'none';
-      uiContainer.style.display = 'flex';
-      updateStageView();
-    });
-
-    anchor.addEventListener('targetLost', () => {
-      isTargetFound = false;
-      scanPrompt.style.display = 'block';
-      uiContainer.style.display = 'none';
-      // คงค่า currentStep ไว้ ไม่รีเซ็ต
-    });
-
-    // ================= ระบบแบบทดสอบ 3 ข้อ =================
-    const quizQuestions = [
-      {
-        q: "1. สิ่งใดเป็นตัวการหลักที่ให้ความร้อนจนน้ำระเหยกลายเป็นไอ?",
-        options: ["ลมมรสุม", "ดวงอาทิตย์", "แรงดึงดูดของโลก"],
-        correct: 1,
-        explain: "ถูกต้อง! ความร้อนจากดวงอาทิตย์ทำให้น้ำเปลี่ยนสถานะเป็นไอ"
-      },
-      {
-        q: "2. การที่ไอน้ำรวมตัวกันกลายเป็นก้อนเมฆ เรียกว่ากระบวนการใด?",
-        options: ["การควบแน่น", "การหลอมเหลว", "การระเหิด"],
-        correct: 0,
-        explain: "ถูกต้อง! เมื่อไอน้ำเจอกับอากาศเย็นจะควบแน่นเป็นหยดน้ำเล็ก ๆ เกิดเป็นเมฆ"
-      },
-      {
-        q: "3. เมื่อเมฆรวมตัวกันหนักมากจนอากาศพยุงไม่ไหว จะเกิดสิ่งใดขึ้น?",
-        options: ["ลมพายุพัดหายไป", "ฝนตกกลับลงสู่พื้นโลก", "กลายเป็นแสงอาทิตย์"],
-        correct: 1,
-        explain: "ถูกต้อง! ละอองน้ำจะรวมกันจนหนักแล้วตกลงมาเป็นหยาดน้ำฟ้าหรือฝน"
-      }
-    ];
-
-    let currentQuizIndex = 0;
-    const quizModal = document.getElementById('quizModal');
-    const quizIndexEl = document.getElementById('quizIndex');
-    const quizQuestionEl = document.getElementById('quizQuestion');
-    const quizOptionsEl = document.getElementById('quizOptions');
-    const quizFeedbackEl = document.getElementById('quizFeedback');
-    const quizNextBtn = document.getElementById('quizNextBtn');
-    const closeQuizBtn = document.getElementById('closeQuizBtn');
-
-    openQuizBtn.addEventListener('click', () => {
-      currentQuizIndex = 0;
-      loadQuizQuestion();
-      quizModal.style.display = 'flex';
-    });
-
-    closeQuizBtn.addEventListener('click', () => {
-      quizModal.style.display = 'none';
-    });
-
-    function loadQuizQuestion() {
-      const q = quizQuestions[currentQuizIndex];
-      quizIndexEl.innerText = `คำถามที่ ${currentQuizIndex + 1} จาก ${quizQuestions.length}`;
-      quizQuestionEl.innerText = q.q;
-      quizFeedbackEl.innerText = "";
-      quizNextBtn.style.display = "none";
-      quizOptionsEl.innerHTML = "";
-
-      q.options.forEach((optText, i) => {
-        const btn = document.createElement('button');
-        btn.className = 'option-btn';
-        btn.innerText = optText;
-        btn.onclick = () => selectQuizAnswer(i, q);
-        quizOptionsEl.appendChild(btn);
-      });
-    }
-
-    function selectQuizAnswer(selectedIndex, qData) {
-      const allBtns = quizOptionsEl.querySelectorAll('.option-btn');
-      allBtns.forEach(btn => btn.disabled = true);
-
-      if (selectedIndex === qData.correct) {
-        allBtns[selectedIndex].style.background = "#15803d";
-        quizFeedbackEl.style.color = "#4ade80";
-        quizFeedbackEl.innerText = "🎉 " + qData.explain;
-      } else {
-        allBtns[selectedIndex].style.background = "#b91c1c";
-        allBtns[qData.correct].style.background = "#15803d";
-        quizFeedbackEl.style.color = "#f87171";
-        quizFeedbackEl.innerText = "❌ ยังไม่ถูกต้อง เฉลยคือ: " + qData.options[qData.correct];
-      }
-
-      if (currentQuizIndex < quizQuestions.length - 1) {
-        quizNextBtn.innerText = "ข้อถัดไป ➔";
-        quizNextBtn.style.display = "block";
-      } else {
-        quizNextBtn.innerText = "จบบทเรียนยอดเยี่ยม! 👏";
-        quizNextBtn.style.display = "block";
-      }
-    }
-
-    quizNextBtn.addEventListener('click', () => {
-      if (currentQuizIndex < quizQuestions.length - 1) {
-        currentQuizIndex++;
-        loadQuizQuestion();
-      } else {
-        quizModal.style.display = 'none';
-      }
-    });
-  </script>
+<script>
+const $ = id => document.getElementById(id);
+const comp = () => $('xmas').components['xmas-tree'];
+$('target').addEventListener('targetFound', () => { $('hint').hidden = true; comp().restart(); });
+$('target').addEventListener('targetLost', () => { $('hint').hidden = false; comp().found = false; });
+document.querySelector('a-scene').addEventListener('arError', () => {
+  $('hint').hidden = false;
+  $('hint').textContent = 'เปิดกล้องไม่ได้ กรุณาอนุญาตการใช้กล้อง แล้วเปิดด้วย Chrome หรือ Safari';
+});
+$('bLight').onclick = e => {
+  const c = comp(); c.lightsOn = !c.lightsOn;
+  e.target.textContent = c.lightsOn ? 'ปิดไฟ' : 'เปิดไฟ';
+};
+$('bSnow').onclick = e => {
+  const c = comp(); c.snowOn = !c.snowOn; c.snow.object3D.visible = c.snowOn;
+  e.target.textContent = c.snowOn ? 'ปิดหิมะ' : 'เปิดหิมะ';
+};
+</script>
 </body>
 </html>
